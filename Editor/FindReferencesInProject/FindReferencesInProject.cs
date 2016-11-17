@@ -1,23 +1,32 @@
 ﻿using UnityEngine;
 using UnityEditor;
-using UnityEditor.SceneManagement;
 using System.IO;
-using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
 
-public class FindReferencesInProject : EditorWindow {
-
-    const string dummyFileName = "FindReferencesInProject.txt";
-    public Object objectToExamine;              //Object that we are looking dependecies for
+public class FindReferencesInProject : EditorWindow
+{
     [SerializeField]
     public List<Object> ObjectsToExamine;
-    List<Object> References;                    //A list of found references for the object, including scenes
-    Vector2 scrollPos = new Vector2();          //scroll position for scroll area
 
-    bool fastMode;
+    //Object that we are looking dependecies for
+    public Object objectToExamine;
 
-    static Dictionary<Object, List<Object>> DependenciesCash;
+    private const string dummyFileName = "FindReferencesInProject.txt";
+
+    /// <summary>
+    /// A list of found references for the object, including scenes
+    /// </summary>
+    private List<Object> References;
+
+    /// <summary>
+    /// Scroll position for scroll area
+    /// </summary>
+    private Vector2 scrollPos = new Vector2();
+
+    private bool fastMode;
+
+    private static Dictionary<Object, List<Object>> DependenciesCache;
 
     [MenuItem("Assets/Find References In Project", false, 20)]
     static void Init()
@@ -28,9 +37,7 @@ public class FindReferencesInProject : EditorWindow {
         if (Selection.activeObject != null && AssetDatabase.IsMainAsset(Selection.activeObject))
         {
             window.objectToExamine = Selection.activeObject;
-            
         }
-        
     }
 
     [MenuItem("Assets/Find References In Project", true)]
@@ -42,9 +49,10 @@ public class FindReferencesInProject : EditorWindow {
 
     void BugWorkAround()
     {
-        if (!System.IO.File.Exists(Application.dataPath.Replace("Assets", Path.GetDirectoryName(AssetDatabase.GetAssetPath(MonoScript.FromScriptableObject(this))) + "/" + dummyFileName)))
+        // TODO: Remove copy-paste
+        if (!File.Exists(Application.dataPath.Replace("Assets", Path.GetDirectoryName(AssetDatabase.GetAssetPath(MonoScript.FromScriptableObject(this))) + "/" + dummyFileName)))
         {
-            System.IO.File.Create(Application.dataPath.Replace("Assets", Path.GetDirectoryName(AssetDatabase.GetAssetPath(MonoScript.FromScriptableObject(this))) + "/" + dummyFileName)).Close();
+            File.Create(Application.dataPath.Replace("Assets", Path.GetDirectoryName(AssetDatabase.GetAssetPath(MonoScript.FromScriptableObject(this))) + "/" + dummyFileName)).Close();
         }
         AssetDatabase.ImportAsset(Path.GetDirectoryName(AssetDatabase.GetAssetPath(MonoScript.FromScriptableObject(this))) + "/" + dummyFileName); //Used for removing some bug with fonts (In some projects after the script all texts in the editor are missing by some rison) Some editor redraw bug. After reimporting any asset everything becomes normal.
     }
@@ -58,21 +66,21 @@ public class FindReferencesInProject : EditorWindow {
         EditorGUILayout.PropertyField(so.FindProperty("ObjectsToExamine"), true);
         if (EditorGUI.EndChangeCheck())
             so.ApplyModifiedProperties();
-        
+
         fastMode = GUILayout.Toggle(fastMode, new GUIContent("fast mode", "In fast mode all dependencies are cashed."));
         if (fastMode)
         {
             EditorGUILayout.BeginHorizontal();
             if (GUILayout.Button("Cash dependencies"))
             {
-                CashDependencies();
+                CacheDependencies();
                 BugWorkAround();
             }
 
-            if (DependenciesCash == null)
+            if (DependenciesCache == null)
                 GUILayout.Label("null");
             else
-                GUILayout.Label("Cashed " + DependenciesCash.Count + "assets");
+                GUILayout.Label("Cashed " + DependenciesCache.Count + "assets");
             EditorGUILayout.EndHorizontal();
         }
 
@@ -135,7 +143,12 @@ public class FindReferencesInProject : EditorWindow {
         }
         return result.ToList();
     }
-    
+
+    /// <summary>
+    /// TODO: Add comment
+    /// </summary>
+    /// <param name="b"></param>
+    /// <returns></returns>
     public static List<Object> CollectReverseDependencies(List<Object> b)
     {
         HashSet<Object> result = new HashSet<Object>();
@@ -169,10 +182,16 @@ public class FindReferencesInProject : EditorWindow {
         return result.ToList();
     }
 
+    /// <summary>
+    /// TODO: Add comments
+    /// TODO: Rename method parameter
+    /// </summary>
+    /// <param name="b"></param>
+    /// <returns></returns>
     public static List<Object> CollectReverseDependenciesFast(List<Object> b)
     {
-        if (DependenciesCash == null)
-            CashDependencies();
+        if (DependenciesCache == null)
+            CacheDependencies();
 
         HashSet<Object> result = new HashSet<Object>();
         int i = 0;
@@ -181,10 +200,9 @@ public class FindReferencesInProject : EditorWindow {
         foreach (Object objToTest in b)
             objs.AddRange(AssetDatabase.LoadAllAssetsAtPath(AssetDatabase.GetAssetPath(objToTest)));
 
-        foreach (KeyValuePair<Object, List<Object>> pair in DependenciesCash)
+        foreach (KeyValuePair<Object, List<Object>> pair in DependenciesCache)
         {
             i++;
-
             if (b.Contains(pair.Key)) continue;
             if (pair.Value.Count < 2) continue;
             foreach (Object dp in pair.Value)
@@ -194,19 +212,22 @@ public class FindReferencesInProject : EditorWindow {
                         result.Add(pair.Key);
                         break;
                     }
-            if (EditorUtility.DisplayCancelableProgressBar("Find references in the project.", "Looking for references in " + DependenciesCash.Count + " cashed assets...", (float)i / DependenciesCash.Count))
+            if (EditorUtility.DisplayCancelableProgressBar("Find references in the project.", "Looking for references in " + DependenciesCache.Count + " cashed assets...", (float)i / DependenciesCache.Count))
                 break;
         }
         EditorUtility.ClearProgressBar();
         return result.ToList();
     }
 
-    public static void CashDependencies()
+    /// <summary>
+    /// TODO: Add comment
+    /// </summary>
+    public static void CacheDependencies()
     {
-        if (DependenciesCash != null)
-            DependenciesCash.Clear();
+        if (DependenciesCache != null)
+            DependenciesCache.Clear();
         else
-            DependenciesCash = new Dictionary<Object, List<Object>>();
+            DependenciesCache = new Dictionary<Object, List<Object>>();
 
         string[] AssetPaths = AssetDatabase.GetAllAssetPaths();
         int i = 0;
@@ -217,8 +238,8 @@ public class FindReferencesInProject : EditorWindow {
             Object obj = AssetDatabase.LoadMainAssetAtPath(assetPath);
             Object[] dependencies = EditorUtility.CollectDependencies(new Object[1] { obj });
             if (dependencies.Length < 2) continue;
-            DependenciesCash.Add(obj, new List<Object>(dependencies));
-            if (EditorUtility.DisplayCancelableProgressBar("Ccahing dependencies.", "Caching dependencies for " + AssetPaths.Length + " assets...", (float)i / AssetPaths.Length))
+            DependenciesCache.Add(obj, new List<Object>(dependencies));
+            if (EditorUtility.DisplayCancelableProgressBar("Caching dependencies.", "Caching dependencies for " + AssetPaths.Length + " assets...", (float)i / AssetPaths.Length))
                 break;
         }
         EditorUtility.ClearProgressBar();
